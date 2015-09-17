@@ -7,12 +7,20 @@ import (
 func main() {
 	rootPath := "D:\\www\\imageco\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action\\"
 	//	writePath := "d:\\fileList.php"
-
-	GetFileList(rootPath, PathFilter{
+	container := FileOperation{
 		".php",
 		"readme",
 		"Notice",
-		FileOperation{P_SUFFIX_OR_PREFIX, P_NON},
+		P_SUFFIX_OR_PREFIX,
+	}
+	ignorer := FileOperation{
+		".php",
+		"readme",
+		"Notice",
+		P_NON,
+	}
+	GetFileList(rootPath, PathFilter{
+		container, ignorer,
 	})
 	//	foreachFileList()
 	//	writeFileList(writePath, rootPath)

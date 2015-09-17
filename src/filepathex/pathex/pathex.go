@@ -6,31 +6,30 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp" 
+	"regexp"
 	"strings"
 )
 
 const (
-	P_NON               = -1   //-1  
+	P_NON               = -1   //-1
 	P_ALL               = iota //0
-	P_SUFFIX                   //1 
+	P_SUFFIX                   //1
 	P_PREFIX                   //2
 	P_CONTAIN                  //3
 	P_SUFFIX_OR_PREFIX         //4
 	P_SUFFIX_AND_PREFIX        //5
 )
+
 type (
 	PathFilter struct {
-		//directoryFilter map[string] string
-		//fileFileter map[string] string
-		FileSuffix  string //file suffix 
-		FilePrefix  string //file prefix
-		FileContain string //file contain 
-		Operation FileOperation
+		Container FileOperation
+		Ignorer   FileOperation
 	}
 	FileOperation struct {
-		Container int // -1: non 0:all 1:FileSuffix 2:FilePrefix 3:FileContain 4:FileSuffix or FilePrefix 5: FileSuffix and FilePrefix
-		Ignorer   int // -1:non 0:all 1:FileSuffix 2:FilePrefix 3:FileContain 4:FileSuffix or FilePrefix 5: FileSuffix and FilePrefix
+		FileSuffix  string //file suffix
+		FilePrefix  string //file prefix
+		FileContain string //file contain
+		Operation   int    // -1: non 0:all 1:FileSuffix 2:FilePrefix 3:FileContain 4:FileSuffix or FilePrefix 5: FileSuffix and FilePrefix
 	}
 )
 
@@ -43,8 +42,8 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 		fmt.Printf("%s:get panic %s", path, err.Error())
 	} else {
 		filterResult := filterPath(path, info)
-		fmt.Println(path,":",filterResult)  // for feture filter path function
-		if !info.IsDir() && filterResult { //不是目录且包含制定后缀
+		fmt.Println(path, ":", filterResult) // for feture filter path function
+		if !info.IsDir() && filterResult {   //不是目录且包含制定后缀
 			funcNameList := ReadSpecialFile(path)
 			fileList[path] = funcNameList
 		}
@@ -54,45 +53,44 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 
 func filterPath(path string, info os.FileInfo) bool {
 	result := true
-	Operation := currPathFilter.Operation
-	Container := Operation.Container
-	Ignorer := Operation.Ignorer
-	if Ignorer != P_NON {
-		result = filterPathViaIgnorer(path, Ignorer, info)
+	container := currPathFilter.Container
+	ignorer := currPathFilter.Ignorer
+	if ignorer.Operation != P_NON {
+		result = filterPathViaIgnorer(path, ignorer, info)
 	}
-	if result && Container != P_NON && Container != P_ALL {
-		result = filterPathViaContainer(path, Container, info)
+	if result && container.Operation != P_NON && container.Operation != P_ALL {
+		result = filterPathViaContainer(path, container, info)
 	}
 	return result
 }
 
-func filterPathViaOperation(path string, Operation int, info os.FileInfo) bool {
+func filterPathViaOperation(path string, fileOperation FileOperation, info os.FileInfo) bool {
 	result := true
-	if Operation != P_ALL {
-		FileSuffix := currPathFilter.FileSuffix
-		FilePrefix := currPathFilter.FilePrefix
-		FileContain := currPathFilter.FileContain
-		hasSuffix := false 
+	if fileOperation.Operation != P_ALL {
+		FileSuffix := fileOperation.FileSuffix
+		FilePrefix := fileOperation.FilePrefix
+		FileContain := fileOperation.FileContain
+		hasSuffix := false
 		hasPrefix := false
 		hasContain := false
 		fileName := info.Name()
-		if Operation == P_SUFFIX || Operation == P_SUFFIX_AND_PREFIX || Operation == P_SUFFIX_OR_PREFIX  {
+		if fileOperation.Operation == P_SUFFIX || fileOperation.Operation == P_SUFFIX_AND_PREFIX || fileOperation.Operation == P_SUFFIX_OR_PREFIX {
 			hasSuffix = strings.HasSuffix(fileName, FileSuffix)
-		} 
-		if Operation == P_PREFIX || Operation == P_SUFFIX_AND_PREFIX || Operation == P_SUFFIX_OR_PREFIX {
+		}
+		if fileOperation.Operation == P_PREFIX || fileOperation.Operation == P_SUFFIX_AND_PREFIX || fileOperation.Operation == P_SUFFIX_OR_PREFIX {
 			hasPrefix = strings.HasPrefix(fileName, FilePrefix)
-		} 
-		if Operation == P_CONTAIN {
+		}
+		if fileOperation.Operation == P_CONTAIN {
 			hasContain = strings.Contains(fileName, FileContain)
 		}
-		
-		if Operation == P_SUFFIX {
-			result = hasSuffix;
-		} else if Operation == P_SUFFIX_AND_PREFIX {
+
+		if fileOperation.Operation == P_SUFFIX {
+			result = hasSuffix
+		} else if fileOperation.Operation == P_SUFFIX_AND_PREFIX {
 			result = hasSuffix && hasPrefix
-		} else if Operation == P_SUFFIX_OR_PREFIX {
+		} else if fileOperation.Operation == P_SUFFIX_OR_PREFIX {
 			result = hasSuffix || hasPrefix
-		} else if Operation == P_CONTAIN {
+		} else if fileOperation.Operation == P_CONTAIN {
 			result = hasContain
 		}
 	}
@@ -100,18 +98,18 @@ func filterPathViaOperation(path string, Operation int, info os.FileInfo) bool {
 	return result
 }
 
-func filterPathViaContainer(path string, Container int, info os.FileInfo) bool {
-	if Container == P_NON {
+func filterPathViaContainer(path string, container FileOperation, info os.FileInfo) bool {
+	if container.Operation == P_NON {
 		return true
 	}
-	return filterPathViaOperation(path, Container, info)
+	return filterPathViaOperation(path, container, info)
 }
 
-func filterPathViaIgnorer(path string, Ignorer int, info os.FileInfo) bool {
-	if Ignorer == P_NON {
+func filterPathViaIgnorer(path string, ignorer FileOperation, info os.FileInfo) bool {
+	if ignorer.Operation == P_NON {
 		return false
 	}
-	result := filterPathViaOperation(path, Ignorer, info)
+	result := filterPathViaOperation(path, ignorer, info)
 	return !result
 }
 
@@ -210,17 +208,4 @@ func writeFileList(fileName string, rootPath string) {
 		fmt.Println("打开文件", fileName, "失败，error:", err1.Error())
 	}
 	defer file.Close()
-}
-
-func main() {
-	rootPath := "D:\\www\\imageco\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action\\"
-//	writePath := "d:\\fileList.php"
-	GetFileList(rootPath,PathFilter{
-		".php",
-		"readme",
-		"Notice",
-		FileOperation{P_SUFFIX_OR_PREFIX, P_NON,},
-	})
-//	foreachFileList()
-//	writeFileList(writePath, rootPath)
 }
