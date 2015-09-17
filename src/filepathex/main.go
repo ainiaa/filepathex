@@ -2,26 +2,29 @@ package main
 
 import (
 	. "./pathex"
+//"regexp"
+//"fmt"
 )
 
 func main() {
-	rootPath := "D:\\www\\imageco\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action\\"
-	//	writePath := "d:\\fileList.php"
-	container := FileOperation{
+	rootPath := "E:\\www\\imageco\\wangcaio2o\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action"
+	
+	container := FilterOperation{
 		".php",
 		"readme",
 		"Notice",
 		P_SUFFIX_OR_PREFIX,
 	}
-	ignorer := FileOperation{
+	ignorer := FilterOperation{
 		".php",
 		"readme",
-		"Notice",
-		P_NON,
+		"(?i)i[a-z]+n",
+		P_CONTAIN_REGEXP,
 	}
 	GetFileList(rootPath, PathFilter{
 		container, ignorer,
 	})
+	//	writePath := "d:\\fileList.php"
 	//	foreachFileList()
 	//	writeFileList(writePath, rootPath)
 }
