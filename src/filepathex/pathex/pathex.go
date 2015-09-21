@@ -23,14 +23,14 @@ const (
 
 type (
 	FilterOperation struct {
-		FileSuffix  string //file suffix
 		FilePrefix  string //file prefix
 		FileContain string //file contain
+		FileSuffix  string //file suffix
 		Operate     int    // -1: non 0:all 1:FileSuffix 2:FilePrefix 3:FileContain 4:FileSuffix or FilePrefix 5: FileSuffix and FilePrefix
 	}
 	PathFilter struct {
-		Container FilterOperation
-		Ignorer   FilterOperation
+		Include FilterOperation
+		Exlude  FilterOperation
 	}
 )
 
@@ -54,13 +54,13 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 
 func filterPath(path string, info os.FileInfo) bool {
 	result := true
-	container := currPathFilter.Container
-	ignorer := currPathFilter.Ignorer
-	if ignorer.Operate != P_NON {
-		result = filterPathViaIgnorer(path, ignorer, info)
+	include := currPathFilter.Include
+	exclude := currPathFilter.Exlude
+	if exclude.Operate != P_NON {
+		result = filterPathViaExclude(path, exclude, info)
 	}
-	if result && container.Operate != P_NON && container.Operate != P_ALL {
-		result = filterPathViaContainer(path, container, info)
+	if result && include.Operate != P_NON && include.Operate != P_ALL {
+		result = filterPathViaInclude(path, include, info)
 	}
 	return result
 }
@@ -84,8 +84,8 @@ func initFileIgnoreRegexp(filterOperation FilterOperation) {
 
 func filterPathViaOperation(path string, filterOperation FilterOperation, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
 	result := true
-	operation := filterOperation.Operate
-	if operation != P_ALL {
+	operate := filterOperation.Operate
+	if operate != P_ALL {
 		FileSuffix := filterOperation.FileSuffix
 		FilePrefix := filterOperation.FilePrefix
 		FileContain := filterOperation.FileContain
@@ -93,27 +93,27 @@ func filterPathViaOperation(path string, filterOperation FilterOperation, filter
 		hasPrefix := false
 		hasContain := false
 		fileName := info.Name()
-		if operation == P_SUFFIX || operation == P_SUFFIX_AND_PREFIX || operation == P_SUFFIX_OR_PREFIX {
+		if operate == P_SUFFIX || operate == P_SUFFIX_AND_PREFIX || operate == P_SUFFIX_OR_PREFIX {
 			hasSuffix = strings.HasSuffix(fileName, FileSuffix)
 		}
-		if operation == P_PREFIX || operation == P_SUFFIX_AND_PREFIX || operation == P_SUFFIX_OR_PREFIX {
+		if operate == P_PREFIX || operate == P_SUFFIX_AND_PREFIX || operate == P_SUFFIX_OR_PREFIX {
 			hasPrefix = strings.HasPrefix(fileName, FilePrefix)
 		}
-		if operation == P_CONTAIN {
+		if operate == P_CONTAIN {
 			hasContain = strings.Contains(fileName, FileContain)
 		}
 
-		if operation == P_SUFFIX {
+		if operate == P_SUFFIX {
 			result = hasSuffix
-		} else if operation == P_PREFIX {
+		} else if operate == P_PREFIX {
 			result = hasPrefix
-		} else if operation == P_SUFFIX_AND_PREFIX {
+		} else if operate == P_SUFFIX_AND_PREFIX {
 			result = hasSuffix && hasPrefix
-		} else if operation == P_SUFFIX_OR_PREFIX {
+		} else if operate == P_SUFFIX_OR_PREFIX {
 			result = hasSuffix || hasPrefix
-		} else if operation == P_CONTAIN {
+		} else if operate == P_CONTAIN {
 			result = hasContain
-		} else if operation == P_CONTAIN_REGEXP {
+		} else if operate == P_CONTAIN_REGEXP {
 			result = filterRegexp.Match([]byte(fileName))
 		}
 	}
@@ -121,26 +121,76 @@ func filterPathViaOperation(path string, filterOperation FilterOperation, filter
 	return result
 }
 
-func filterPathViaContainer(path string, container FilterOperation, info os.FileInfo) bool {
-	if container.Operate == P_NON {
+func filterPathViaInclude(path string, include FilterOperation, info os.FileInfo) bool {
+	if include.Operate == P_NON {
 		return true
 	}
-	initFileContainRegexp(container)
-	return filterPathViaOperation(path, container, filterContainRegexp, info)
+	initFileContainRegexp(include)
+	return filterPathViaOperation(path, include, filterContainRegexp, info)
 }
 
-func filterPathViaIgnorer(path string, ignorer FilterOperation, info os.FileInfo) bool {
-	if ignorer.Operate == P_NON {
+func filterPathViaExclude(path string, exclude FilterOperation, info os.FileInfo) bool {
+	if exclude.Operate == P_NON {
 		return false
 	}
-	initFileIgnoreRegexp(ignorer)
-	result := filterPathViaOperation(path, ignorer, filterIgnoreRegexp, info)
+	initFileIgnoreRegexp(exclude)
+	result := filterPathViaOperation(path, exclude, filterIgnoreRegexp, info)
 	return !result
 }
 
 func GetFileList(path string, pathFilter PathFilter) {
 	currPathFilter = pathFilter
 	filepath.Walk(path, WalkFuncImpl)
+}
+
+func GetFileListViaStartWith(rootPath string, condition string) {
+	pathFilter := pathFilter{
+		FilterOperation{
+			condition,
+			"",
+			"",
+			P_PREFIX,
+		},
+	}
+
+	GetFileList(rootPath, pathFilter)
+}
+
+func GetFileListViaEndWith(rootPath string, condition string) {
+	pathFilter := pathFilter{
+		FilterOperation{
+			condition,
+			"",
+			"",
+			P_SUFFIX,
+		},
+	}
+
+	GetFileList(rootPath, pathFilter)
+}
+
+func GetFileListViaContain(rootPath string, condition string, isRegex bool) {
+	if isRegex {
+		pathFilter := pathFilter{
+			FilterOperation{
+				condition,
+				"",
+				"",
+				P_CONTAIN_REGEXP,
+			},
+		}
+	} else {
+		pathFilter := pathFilter{
+			FilterOperation{
+				condition,
+				"",
+				"",
+				P_CONTAIN,
+			},
+		}
+
+	}
+	GetFileList(rootPath, pathFilter)
 }
 
 func ReadSpecialFile(path string) []string {
