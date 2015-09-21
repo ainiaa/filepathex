@@ -22,15 +22,21 @@ const (
 )
 
 type (
-	FilterOperation struct {
+	FileFilter struct {
 		FilePrefix  string //file prefix
 		FileContain string //file contain
 		FileSuffix  string //file suffix
 		Operate     int    // -1: non 0:all 1:FileSuffix 2:FilePrefix 3:FileContain 4:FileSuffix or FilePrefix 5: FileSuffix and FilePrefix
 	}
+	DirecotyFilter struct {
+		DirecotyPath []string
+		Operate      int
+	}
 	PathFilter struct {
-		Include FilterOperation
-		Exlude  FilterOperation
+		FileInclude     FileFilter
+		FileExlude      FileFilter
+		DirctoryInclude DirecotyFilter
+		DirctoryExclude DirecotyFilter
 	}
 )
 
@@ -45,8 +51,8 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 		filterResult := filterPath(path, info) //filter
 		fmt.Println(path, ":", filterResult)   // for feture filter path function
 		if !info.IsDir() && filterResult {     //不是目录且包含制定后缀
-			funcNameList := ReadSpecialFile(path)
-			fileList[path] = funcNameList
+			fileNameList := ReadSpecialFile(path)
+			fileList[path] = fileNameList
 		}
 	}
 	return err
@@ -54,8 +60,8 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 
 func filterPath(path string, info os.FileInfo) bool {
 	result := true
-	include := currPathFilter.Include
-	exclude := currPathFilter.Exlude
+	include := currPathFilter.FileInclude
+	exclude := currPathFilter.FileExlude
 	if exclude.Operate != P_NON {
 		result = filterPathViaExclude(path, exclude, info)
 	}
@@ -68,13 +74,13 @@ func filterPath(path string, info os.FileInfo) bool {
 var filterContainRegexp *regexp.Regexp = nil
 var filterIgnoreRegexp *regexp.Regexp = nil
 
-func initFileContainRegexp(filterOperation FilterOperation) {
+func initFileContainRegexp(filterOperation FileFilter) {
 	if filterContainRegexp == nil {
 		fileOperation := filterOperation.FileContain
 		filterContainRegexp = regexp.MustCompile(fileOperation)
 	}
 }
-func initFileIgnoreRegexp(filterOperation FilterOperation) {
+func initFileIgnoreRegexp(filterOperation FileFilter) {
 	if filterIgnoreRegexp == nil {
 		fileOperation := filterOperation.FileContain
 		fmt.Println("initFileIgnoreRegexp  fileOperation:", initFileIgnoreRegexp)
@@ -82,7 +88,7 @@ func initFileIgnoreRegexp(filterOperation FilterOperation) {
 	}
 }
 
-func filterPathViaOperation(path string, filterOperation FilterOperation, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
+func filterPathViaOperation(path string, filterOperation FileFilter, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
 	result := true
 	operate := filterOperation.Operate
 	if operate != P_ALL {
@@ -121,7 +127,7 @@ func filterPathViaOperation(path string, filterOperation FilterOperation, filter
 	return result
 }
 
-func filterPathViaInclude(path string, include FilterOperation, info os.FileInfo) bool {
+func filterPathViaInclude(path string, include FileFilter, info os.FileInfo) bool {
 	if include.Operate == P_NON {
 		return true
 	}
@@ -129,7 +135,7 @@ func filterPathViaInclude(path string, include FilterOperation, info os.FileInfo
 	return filterPathViaOperation(path, include, filterContainRegexp, info)
 }
 
-func filterPathViaExclude(path string, exclude FilterOperation, info os.FileInfo) bool {
+func filterPathViaExclude(path string, exclude FileFilter, info os.FileInfo) bool {
 	if exclude.Operate == P_NON {
 		return false
 	}
