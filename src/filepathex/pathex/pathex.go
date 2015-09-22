@@ -40,6 +40,18 @@ type (
 	}
 )
 
+var nonFileFilter = FileFilter{
+	"",
+	"",
+	"",
+	P_NON,
+}
+
+var nonDirecotyFilter = DirecotyFilter{
+	make([]string, 0),
+	P_NON,
+}
+
 var currPathFilter PathFilter
 
 var fileList map[string][]string = make(map[string][]string)
@@ -150,49 +162,62 @@ func GetFileList(path string, pathFilter PathFilter) {
 }
 
 func GetFileListViaStartWith(rootPath string, condition string) {
-	pathFilter := pathFilter{
-		FilterOperation{
+	pathFilter := PathFilter{
+		FileFilter{
 			condition,
 			"",
 			"",
 			P_PREFIX,
 		},
+		nonFileFilter,
+		nonDirecotyFilter,
+		nonDirecotyFilter,
 	}
 
 	GetFileList(rootPath, pathFilter)
 }
 
 func GetFileListViaEndWith(rootPath string, condition string) {
-	pathFilter := pathFilter{
-		FilterOperation{
+	pathFilter := PathFilter{
+		FileFilter{
 			condition,
 			"",
 			"",
 			P_SUFFIX,
 		},
+		nonFileFilter,
+		nonDirecotyFilter,
+		nonDirecotyFilter,
 	}
 
 	GetFileList(rootPath, pathFilter)
 }
 
 func GetFileListViaContain(rootPath string, condition string, isRegex bool) {
+	var pathFilter PathFilter
 	if isRegex {
-		pathFilter := pathFilter{
-			FilterOperation{
+		pathFilter = PathFilter{
+			FileFilter{
 				condition,
 				"",
 				"",
 				P_CONTAIN_REGEXP,
 			},
+			nonFileFilter,
+			nonDirecotyFilter,
+			nonDirecotyFilter,
 		}
 	} else {
-		pathFilter := pathFilter{
-			FilterOperation{
+		pathFilter = PathFilter{
+			FileFilter{
 				condition,
 				"",
 				"",
 				P_CONTAIN,
 			},
+			nonFileFilter,
+			nonDirecotyFilter,
+			nonDirecotyFilter,
 		}
 
 	}
@@ -258,7 +283,7 @@ func IsFileExists(fileName string) (isExists bool) {
 	return isExists
 }
 
-func writeFileList(fileName string, rootPath string) {
+func WriteFileList(fileName string, rootPath string) {
 	var file *os.File
 	var err1 error
 	if IsFileExists(fileName) { //文件已存在
@@ -268,7 +293,7 @@ func writeFileList(fileName string, rootPath string) {
 	}
 
 	if err1 == nil { //获取文件成果
-		currentContent := "<?php\r\n $fileList = array(\r\n"
+		currentContent := "<?php\r\n return array(\r\n"
 		//fmt.Println("rootPath:",rootPath)
 		suffix := ".class.php"
 		for k, v := range fileList {

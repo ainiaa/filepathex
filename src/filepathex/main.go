@@ -7,24 +7,30 @@ import (
 )
 
 func main() {
-	rootPath := "E:\\www\\imageco\\wangcaio2o\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action"
 
-	include := FilterOperation{
+	rootPath := "D:\\www\\imageco\\wangcai_plateform\\source\\php\\home\\Home\\Lib\\Action\\"
+
+	include := FileFilter{
 		".php",
 		"readme",
-		"Notice",
-		P_SUFFIX_OR_PREFIX,
+		".class.php",
+		P_SUFFIX,
 	}
-	exclude := FilterOperation{
+	exclude := FileFilter{
 		".php",
 		"readme",
 		"(?i)i[a-z]+n",
-		P_CONTAIN_REGEXP,
+		P_NON,
+	}
+
+	nonDirecotyFilter := DirecotyFilter{
+		make([]string, 0),
+		P_NON,
 	}
 	GetFileList(rootPath, PathFilter{
-		include, exclude,
+		include, exclude, nonDirecotyFilter, nonDirecotyFilter,
 	})
-	//	writePath := "d:\\fileList.php"
+	writePath := "d:\\fileList.php"
 	//	foreachFileList()
-	//	writeFileList(writePath, rootPath)
+	WriteFileList(writePath, rootPath)
 }
