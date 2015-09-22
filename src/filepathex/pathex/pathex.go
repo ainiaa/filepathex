@@ -158,7 +158,52 @@ func filterPathViaExclude(path string, exclude FileFilter, info os.FileInfo) boo
 
 func GetFileList(path string, pathFilter PathFilter) {
 	currPathFilter = pathFilter
-	filepath.Walk(path, WalkFuncImpl)
+	Walk(path, WalkFuncImpl)
+}
+
+func Walk(root string, walkFn WalkFunc) error {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return walkFn(root, nil, err)
+	}
+	return walk(root, info, walkFn)
+}
+// walk recursively descends path, calling w.
+func walk(path string, info os.FileInfo, walkFn WalkFunc) error {
+	err := walkFn(path, info, nil)
+	if err != nil {
+		if info.IsDir() && err == SkipDir {
+			return nil
+		}
+		return err
+	}
+
+	if !info.IsDir() {
+		return nil
+	}
+
+	names, err := readDirNames(path)
+	if err != nil {
+		return walkFn(path, info, err)
+	}
+
+	for _, name := range names {
+		filename := Join(path, name)
+		fileInfo, err := lstat(filename)
+		if err != nil {
+			if err := walkFn(filename, fileInfo, err); err != nil && err != SkipDir {
+				return err
+			}
+		} else {
+			err = walk(filename, fileInfo, walkFn)
+			if err != nil {
+				if !fileInfo.IsDir() || err != SkipDir {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func GetFileListViaStartWith(rootPath string, condition string) {
