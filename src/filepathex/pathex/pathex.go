@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -55,52 +56,78 @@ var nonDirecotyFilter = DirecotyFilter{
 var currPathFilter PathFilter
 
 var fileList map[string][]string = make(map[string][]string)
+var direcotyListDefault int = 5
+var direcotyList []string = make([]string, direcotyListDefault)
 
 func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 	if err != nil { //get error when walking directory
 		fmt.Printf("%s:get panic %s", path, err.Error())
 	} else {
-		filterResult := filterPath(path, info) //filter
-		fmt.Println(path, ":", filterResult)   // for feture filter path function
-		if !info.IsDir() && filterResult {     //不是目录且包含制定后缀
-			fileNameList := ReadSpecialFile(path)
-			fileList[path] = fileNameList
+		//filterResult := filterPath(path, info) //filter
+		filterResult := true
+		fmt.Println(path, ":", filterResult) // for feature filter path function
+		if !info.IsDir() && filterResult {   //不是目录且包含指定后缀
+			funcName := ReadSpecialFile(path)
+			fileList[path] = funcName
 		}
 	}
 	return err
 }
 
-func filterPath(path string, info os.FileInfo) bool {
+func filterPath(path string, info os.FileInfo, pathFilter PathFilter) bool {
 	result := true
-	include := currPathFilter.FileInclude
-	exclude := currPathFilter.FileExlude
-	if exclude.Operate != P_NON {
-		result = filterPathViaExclude(path, exclude, info)
+	if !info.IsDir() {
+		include := pathFilter.FileInclude
+		exclude := pathFilter.FileExlude
+		if exclude.Operate != P_NON {
+			result = filterFileViaExclude(path, exclude, info)
+		}
+		if result && include.Operate != P_NON && include.Operate != P_ALL {
+			result = filterFileViaInclude(path, include, info)
+		}
+	} else {
+		include := pathFilter.DirctoryInclude
+		exclude := pathFilter.DirctoryExclude
+		if exclude.Operate != P_NON {
+			result = filterDirecotyViaInclude(path, exclude, info)
+		}
+		if result && include.Operate != P_NON && include.Operate != P_ALL {
+			result = filterDirecotyViaExclude(path, include, info)
+		}
+		result = true // todo for dirctory filter
 	}
-	if result && include.Operate != P_NON && include.Operate != P_ALL {
-		result = filterPathViaInclude(path, include, info)
-	}
+
+	fmt.Println("filterPath:", path, "=====", result)
 	return result
 }
 
 var filterContainRegexp *regexp.Regexp = nil
 var filterIgnoreRegexp *regexp.Regexp = nil
 
-func initFileContainRegexp(filterOperation FileFilter) {
+func initFileContainRegexp(operation interface{}) *regexp.Regexp {
 	if filterContainRegexp == nil {
-		fileOperation := filterOperation.FileContain
-		filterContainRegexp = regexp.MustCompile(fileOperation)
+		if fileFilterOperation, ok := operation.(FileFilter); ok {
+			fileOperation := fileFilterOperation.FileContain
+			filterContainRegexp = regexp.MustCompile(fileOperation)
+		} else if direcotyFilterOperation, ok := operation.(DirecotyFilter); ok {
+			fmt.Println(direcotyFilterOperation)
+			direcotyOperation := "" //todo
+			filterContainRegexp = regexp.MustCompile(direcotyOperation)
+		}
 	}
+	return filterContainRegexp
 }
-func initFileIgnoreRegexp(filterOperation FileFilter) {
+func initFileIgnoreRegexp(operation interface{}) {
 	if filterIgnoreRegexp == nil {
-		fileOperation := filterOperation.FileContain
-		fmt.Println("initFileIgnoreRegexp  fileOperation:", initFileIgnoreRegexp)
-		filterIgnoreRegexp = regexp.MustCompile(fileOperation)
+		if filterOperation, ok := operation.(FileFilter); ok {
+			fileOperation := filterOperation.FileContain
+			fmt.Println("initFileIgnoreRegexp  fileOperation:", initFileIgnoreRegexp)
+			filterIgnoreRegexp = regexp.MustCompile(fileOperation)
+		}
 	}
 }
 
-func filterPathViaOperation(path string, filterOperation FileFilter, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
+func filterFileViaOperation(path string, filterOperation FileFilter, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
 	result := true
 	operate := filterOperation.Operate
 	if operate != P_ALL {
@@ -139,40 +166,112 @@ func filterPathViaOperation(path string, filterOperation FileFilter, filterRegex
 	return result
 }
 
-func filterPathViaInclude(path string, include FileFilter, info os.FileInfo) bool {
+func filterFileViaInclude(path string, include FileFilter, info os.FileInfo) bool {
 	if include.Operate == P_NON {
 		return true
 	}
 	initFileContainRegexp(include)
-	return filterPathViaOperation(path, include, filterContainRegexp, info)
+	return filterFileViaOperation(path, include, filterContainRegexp, info)
 }
 
-func filterPathViaExclude(path string, exclude FileFilter, info os.FileInfo) bool {
+func filterFileViaExclude(path string, exclude FileFilter, info os.FileInfo) bool {
 	if exclude.Operate == P_NON {
 		return false
 	}
 	initFileIgnoreRegexp(exclude)
-	result := filterPathViaOperation(path, exclude, filterIgnoreRegexp, info)
+	result := filterFileViaOperation(path, exclude, filterIgnoreRegexp, info)
+	return !result
+}
+
+func filterDirecotyViaOperation(path string, filter DirecotyFilter, filterRegexp *regexp.Regexp, info os.FileInfo) bool {
+	result := true
+	operate := filter.Operate
+	if operate != P_ALL {
+		suffix := ""  //todo
+		prefix := ""  //todo
+		contain := "" //todo
+		hasSuffix := false
+		hasPrefix := false
+		hasContain := false
+		name := info.Name()
+		if operate == P_SUFFIX || operate == P_SUFFIX_AND_PREFIX || operate == P_SUFFIX_OR_PREFIX {
+			hasSuffix = strings.HasSuffix(name, suffix)
+		}
+		if operate == P_PREFIX || operate == P_SUFFIX_AND_PREFIX || operate == P_SUFFIX_OR_PREFIX {
+			hasPrefix = strings.HasPrefix(name, prefix)
+		}
+		if operate == P_CONTAIN {
+			hasContain = strings.Contains(name, contain)
+		}
+
+		if operate == P_SUFFIX {
+			result = hasSuffix
+		} else if operate == P_PREFIX {
+			result = hasPrefix
+		} else if operate == P_SUFFIX_AND_PREFIX {
+			result = hasSuffix && hasPrefix
+		} else if operate == P_SUFFIX_OR_PREFIX {
+			result = hasSuffix || hasPrefix
+		} else if operate == P_CONTAIN {
+			result = hasContain
+		} else if operate == P_CONTAIN_REGEXP {
+			result = filterRegexp.Match([]byte(name))
+		}
+	}
+
+	return result
+}
+
+func filterDirecotyViaInclude(path string, include DirecotyFilter, info os.FileInfo) bool {
+	if include.Operate == P_NON {
+		return true
+	}
+	initFileContainRegexp(include)
+	return filterDirecotyViaOperation(path, include, filterContainRegexp, info)
+}
+
+func filterDirecotyViaExclude(path string, exclude DirecotyFilter, info os.FileInfo) bool {
+	if exclude.Operate == P_NON {
+		return false
+	}
+	initFileIgnoreRegexp(exclude)
+	result := filterDirecotyViaOperation(path, exclude, filterIgnoreRegexp, info)
 	return !result
 }
 
 func GetFileList(path string, pathFilter PathFilter) {
 	currPathFilter = pathFilter
-	Walk(path, WalkFuncImpl)
+	Walk(path, pathFilter, WalkFuncImpl)
 }
 
-func Walk(root string, walkFn WalkFunc) error {
+func Walk(root string, pathFilter PathFilter, walkFn filepath.WalkFunc) error {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return walkFn(root, nil, err)
 	}
-	return walk(root, info, walkFn)
+	return walk(root, info, pathFilter, walkFn)
 }
-// walk recursively descends path, calling w.
-func walk(path string, info os.FileInfo, walkFn WalkFunc) error {
-	err := walkFn(path, info, nil)
+
+func readDirNames(dirname string) ([]string, error) {
+	f, err := os.Open(dirname)
 	if err != nil {
-		if info.IsDir() && err == SkipDir {
+		return nil, err
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// walk recursively descends path, calling w.
+func walk(path string, info os.FileInfo, pathFilter PathFilter, walkFn filepath.WalkFunc) error {
+	err := walkFn(path, info, nil)
+
+	if err != nil {
+		if info.IsDir() && err == filepath.SkipDir {
 			return nil
 		}
 		return err
@@ -182,22 +281,41 @@ func walk(path string, info os.FileInfo, walkFn WalkFunc) error {
 		return nil
 	}
 
+	filterResult := filterPath(path, info, pathFilter) //filter
+
+	if filterResult == false { //filtered
+		return filepath.SkipDir
+	}
+
+	direcotyListLen := len(direcotyList)
+	infoName := info.Name()
+	fmt.Println("infoName === ", infoName)
+	if direcotyListLen < direcotyListDefault {
+		direcotyList[direcotyListLen] = infoName
+	} else {
+		direcotyList = append(direcotyList, infoName)
+	}
+
 	names, err := readDirNames(path)
 	if err != nil {
 		return walkFn(path, info, err)
 	}
 
 	for _, name := range names {
-		filename := Join(path, name)
-		fileInfo, err := lstat(filename)
+		filename := filepath.Join(path, name)
+		fileInfo, err := os.Lstat(filename)
 		if err != nil {
-			if err := walkFn(filename, fileInfo, err); err != nil && err != SkipDir {
+			if err := walkFn(filename, fileInfo, err); err != nil && err != filepath.SkipDir {
 				return err
 			}
 		} else {
-			err = walk(filename, fileInfo, walkFn)
+			pathFilterResult := filterPath(path, fileInfo, pathFilter) //filter
+			if pathFilterResult {
+				err = walk(filename, fileInfo, pathFilter, walkFn)
+			}
+
 			if err != nil {
-				if !fileInfo.IsDir() || err != SkipDir {
+				if !fileInfo.IsDir() || err != filepath.SkipDir {
 					return err
 				}
 			}
@@ -355,6 +473,9 @@ func WriteFileList(fileName string, rootPath string) {
 		currentContent += ");"
 		file.WriteString(currentContent + "\r\n")
 
+		for kk, vv := range direcotyList {
+			fmt.Println("dir === ", kk, "------", vv)
+		}
 	} else {
 		fmt.Println("打开文件", fileName, "失败，error:", err1.Error())
 	}
