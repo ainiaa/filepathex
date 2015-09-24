@@ -53,11 +53,11 @@ var nonDirecotyFilter = DirecotyFilter{
 	P_NON,
 }
 
-var currPathFilter PathFilter
-
-var fileList map[string][]string = make(map[string][]string)
-var direcotyListDefault int = 5
+var fileWithFuncList map[string][]string = make(map[string][]string)
+var direcotyListDefault int = 0
 var direcotyList []string = make([]string, direcotyListDefault)
+var fileListDefault int = 0
+var fileList []string = make([]string, fileListDefault)
 
 func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 	if err != nil { //get error when walking directory
@@ -68,7 +68,7 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 		fmt.Println(path, ":", filterResult) // for feature filter path function
 		if !info.IsDir() && filterResult {   //不是目录且包含指定后缀
 			funcName := ReadSpecialFile(path)
-			fileList[path] = funcName
+			fileWithFuncList[path] = funcName
 		}
 	}
 	return err
@@ -76,16 +76,7 @@ func WalkFuncImpl(path string, info os.FileInfo, err error) error {
 
 func filterPath(path string, info os.FileInfo, pathFilter PathFilter) bool {
 	result := true
-	if !info.IsDir() {
-		include := pathFilter.FileInclude
-		exclude := pathFilter.FileExlude
-		if exclude.Operate != P_NON {
-			result = filterFileViaExclude(path, exclude, info)
-		}
-		if result && include.Operate != P_NON && include.Operate != P_ALL {
-			result = filterFileViaInclude(path, include, info)
-		}
-	} else {
+	if info.IsDir() {
 		include := pathFilter.DirctoryInclude
 		exclude := pathFilter.DirctoryExclude
 		if exclude.Operate != P_NON {
@@ -95,9 +86,17 @@ func filterPath(path string, info os.FileInfo, pathFilter PathFilter) bool {
 			result = filterDirecotyViaExclude(path, include, info)
 		}
 		result = true // todo for dirctory filter
+	} else {
+		include := pathFilter.FileInclude
+		exclude := pathFilter.FileExlude
+		if exclude.Operate != P_NON {
+			result = filterFileViaExclude(path, exclude, info)
+		}
+		if result && include.Operate != P_NON && include.Operate != P_ALL {
+			result = filterFileViaInclude(path, include, info)
+		}
 	}
 
-	fmt.Println("filterPath:", path, "=====", result)
 	return result
 }
 
@@ -223,31 +222,25 @@ func filterDirecotyViaOperation(path string, filter DirecotyFilter, filterRegexp
 }
 
 func filterDirecotyViaInclude(path string, include DirecotyFilter, info os.FileInfo) bool {
-	if include.Operate == P_NON {
-		return true
-	}
 	initFileContainRegexp(include)
 	return filterDirecotyViaOperation(path, include, filterContainRegexp, info)
 }
 
 func filterDirecotyViaExclude(path string, exclude DirecotyFilter, info os.FileInfo) bool {
-	if exclude.Operate == P_NON {
-		return false
-	}
 	initFileIgnoreRegexp(exclude)
 	result := filterDirecotyViaOperation(path, exclude, filterIgnoreRegexp, info)
 	return !result
 }
 
-func GetFileList(path string, pathFilter PathFilter) {
-	currPathFilter = pathFilter
-	Walk(path, pathFilter, WalkFuncImpl)
+func GetFileList(path string, pathFilter PathFilter) (fileList []string, direcotyList []string, err error) {
+	return Walk(path, pathFilter, WalkFuncImpl)
 }
 
-func Walk(root string, pathFilter PathFilter, walkFn filepath.WalkFunc) error {
+func Walk(root string, pathFilter PathFilter, walkFn filepath.WalkFunc) (fileList []string, direcotyList []string, err error) {
 	info, err := os.Lstat(root)
 	if err != nil {
-		return walkFn(root, nil, err)
+		err = walkFn(root, nil, err)
+		return fileList, direcotyList, err
 	}
 	return walk(root, info, pathFilter, walkFn)
 }
@@ -267,29 +260,34 @@ func readDirNames(dirname string) ([]string, error) {
 }
 
 // walk recursively descends path, calling w.
-func walk(path string, info os.FileInfo, pathFilter PathFilter, walkFn filepath.WalkFunc) error {
-	err := walkFn(path, info, nil)
-
+func walk(path string, info os.FileInfo, pathFilter PathFilter, walkFn filepath.WalkFunc) (fileList []string, direcotyList []string, err error) {
+	err = walkFn(path, info, nil)
 	if err != nil {
 		if info.IsDir() && err == filepath.SkipDir {
-			return nil
+			return fileList, direcotyList, nil
 		}
-		return err
+		return fileList, direcotyList, err
 	}
 
 	if !info.IsDir() {
-		return nil
+		fileListLen := len(fileList)
+		infoName := info.Name()
+		if fileListLen < fileListDefault {
+			fileList[fileListLen] = infoName
+		} else {
+			fileList = append(fileList, infoName)
+		}
+		return fileList, direcotyList, nil
 	}
 
 	filterResult := filterPath(path, info, pathFilter) //filter
 
 	if filterResult == false { //filtered
-		return filepath.SkipDir
+		return fileList, direcotyList, filepath.SkipDir
 	}
 
 	direcotyListLen := len(direcotyList)
 	infoName := info.Name()
-	fmt.Println("infoName === ", infoName)
 	if direcotyListLen < direcotyListDefault {
 		direcotyList[direcotyListLen] = infoName
 	} else {
@@ -298,7 +296,8 @@ func walk(path string, info os.FileInfo, pathFilter PathFilter, walkFn filepath.
 
 	names, err := readDirNames(path)
 	if err != nil {
-		return walkFn(path, info, err)
+		err = walkFn(path, info, err)
+		return fileList, direcotyList, err
 	}
 
 	for _, name := range names {
@@ -306,22 +305,22 @@ func walk(path string, info os.FileInfo, pathFilter PathFilter, walkFn filepath.
 		fileInfo, err := os.Lstat(filename)
 		if err != nil {
 			if err := walkFn(filename, fileInfo, err); err != nil && err != filepath.SkipDir {
-				return err
+				return fileList, direcotyList, err
 			}
 		} else {
 			pathFilterResult := filterPath(path, fileInfo, pathFilter) //filter
 			if pathFilterResult {
-				err = walk(filename, fileInfo, pathFilter, walkFn)
+				fileList, direcotyList, err = walk(filename, fileInfo, pathFilter, walkFn)
 			}
 
 			if err != nil {
 				if !fileInfo.IsDir() || err != filepath.SkipDir {
-					return err
+					return fileList, direcotyList, err
 				}
 			}
 		}
 	}
-	return nil
+	return fileList, direcotyList, nil
 }
 
 func GetFileListViaStartWith(rootPath string, condition string) {
@@ -427,12 +426,11 @@ func ReadSpecialFile(path string) []string {
 }
 
 func foreachFileList() {
-	for k, v := range fileList {
+	for k, v := range fileWithFuncList {
 		fmt.Println(k, ":", v)
 		for kk, vv := range v {
 			fmt.Println(k, ":", kk, ":", vv)
 		}
-		break
 	}
 }
 
@@ -459,7 +457,7 @@ func WriteFileList(fileName string, rootPath string) {
 		currentContent := "<?php\r\n return array(\r\n"
 		//fmt.Println("rootPath:",rootPath)
 		suffix := ".class.php"
-		for k, v := range fileList {
+		for k, v := range fileWithFuncList {
 			fileKey := strings.Replace(k, rootPath, "", -1)
 			fileKey = strings.TrimSuffix(fileKey, suffix)
 			currentContent += "    '" + fileKey + "' => array(\r\n"
@@ -473,9 +471,9 @@ func WriteFileList(fileName string, rootPath string) {
 		currentContent += ");"
 		file.WriteString(currentContent + "\r\n")
 
-		for kk, vv := range direcotyList {
-			fmt.Println("dir === ", kk, "------", vv)
-		}
+		//		for kk, vv := range direcotyList {
+		//			fmt.Println("dir === ", kk, "------", vv)
+		//		}
 	} else {
 		fmt.Println("打开文件", fileName, "失败，error:", err1.Error())
 	}
